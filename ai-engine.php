@@ -1,7 +1,7 @@
 <?php
 /**
  * KOBA-I Audio: AI Engine (Google Chirp v2)
- * * v4.0.0 Stable: Implements safe Pre-loading and Response Unwrapping.
+ * * v4.1.0 Stable: Corrects Any->unpack() method and ensures pre-loading.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -15,7 +15,7 @@ use Google\Cloud\Speech\V2\RecognitionOutputConfig;
 use Google\Cloud\Speech\V2\GcsOutputConfig;
 use Google\Cloud\Storage\StorageClient;
 
-// Import the specific classes we need to handle manually
+// Specific classes for handling the response
 use Google\Cloud\Speech\V2\BatchRecognizeResponse;
 use Google\Cloud\Speech\V2\OperationMetadata;
 
@@ -32,7 +32,7 @@ class Koba_AI_Engine {
         }
     }
 
-    // ... (Your upload_to_vault and start_chirp_job functions remain unchanged) ...
+    // --- STANDARD UPLOAD & START FUNCTIONS (Unchanged) ---
     public function upload_to_vault($attachment_id) {
         $file_path = get_attached_file($attachment_id);
         if (!$file_path) throw new Exception("Local file not found.");
@@ -54,20 +54,23 @@ class Koba_AI_Engine {
         $request = (new BatchRecognizeRequest())->setRecognizer("{$parent}/recognizers/_")->setConfig($config)->setFiles($files)->setRecognitionOutputConfig($output_config);
         return $speech->batchRecognize($request)->getName();
     }
-    // ... (End of unchanged functions) ...
+    // -----------------------------------------------------
 
     /**
      * CHECK STATUS & GET RESULT URI
      */
     public function check_job_status($operation_name) {
         
-        // --- 1. SAFE PRE-LOAD (The "Instruction Manual") ---
-        // Instead of brute force, we look for the specific Metadata class provided by Google 
-        // and run its standard initialization method.
+        // 1. PRE-LOAD: Force the Library to read the Instruction Manuals
+        // This prevents "Class hasn't been added to descriptor pool" error during unpack()
         if (class_exists('\GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech')) {
             \GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech::initOnce();
         }
-        // ---------------------------------------------------
+        
+        // Fallback: Wake up the specific response class
+        if (class_exists('Google\Cloud\Speech\V2\BatchRecognizeResponse')) {
+            try { new BatchRecognizeResponse(); } catch (\Throwable $e) {}
+        }
         
         $speech = new SpeechClient([
             'credentials' => $this->key_file,
@@ -79,17 +82,15 @@ class Koba_AI_Engine {
         if ($operation->isDone()) {
             $result = $operation->getResult(); 
 
-            // --- 2. THE UNWRAPPER (The "Sealed Box") ---
-            // If the result is wrapped in an "Any" object, we gently unpack it.
+            // 2. THE UNWRAPPER: Fixes "Call to undefined method ... getResults()"
+            // If it is an "Any" wrapper, we unpack it using the correct PHP method.
             if ($result instanceof \Google\Protobuf\Any) {
-                $realResponse = new BatchRecognizeResponse();
-                $result->unpackTo($realResponse);
-                $result = $realResponse;
+                // PHP method is unpack(), NOT unpackTo()
+                $result = $result->unpack();
             }
-            // -------------------------------------------
             
-            // Now we can safely read the results
-            // Note: We check if getResults exists to be extra safe
+            // 3. READ RESULTS
+            // Now $result is the correct BatchRecognizeResponse object
             if (method_exists($result, 'getResults')) {
                 $results = $result->getResults(); 
                 foreach ($results as $res) {
