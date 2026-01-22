@@ -1,7 +1,7 @@
 <?php
 /**
  * KOBA-I Audio: AI Processor (AJAX Logic)
- * * v3.9.0 Fix: Catches Fatal Errors (Throwable) to prevent 500 crashes.
+ * * v5.0.0 COMMERCIAL: Saves to wp-content/uploads/koba-vault to prevent data loss on update.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -11,8 +11,13 @@ class Koba_AI_Processor {
     private $vault_url;
 
     public function __construct() {
-        $this->vault_dir = KOBA_IA_PATH . 'koba-ai-processing-vault/';
-        $this->vault_url = KOBA_IA_URL . 'koba-ai-processing-vault/';
+        // --- COMMERCIAL FIX ---
+        // We ask WordPress: "Where is your safe uploads folder?"
+        $upload_dir = wp_upload_dir();
+        
+        // We define the path: /wp-content/uploads/koba-vault/
+        $this->vault_dir = trailingslashit($upload_dir['basedir']) . 'koba-vault/';
+        $this->vault_url = trailingslashit($upload_dir['baseurl']) . 'koba-vault/';
 
         add_action('wp_ajax_koba_transcribe_chapter', [$this, 'handle_transcribe']);
         add_action('wp_ajax_koba_check_chapter', [$this, 'handle_check']);
@@ -43,7 +48,7 @@ class Koba_AI_Processor {
             update_post_meta($post_id, '_koba_chapters_data', json_encode($chapters));
             wp_send_json_success(['status' => 'processing']);
 
-        } catch (Throwable $e) { // CHANGED: Catch Fatal Errors too
+        } catch (Throwable $e) { 
             wp_send_json_error('Error: ' . $e->getMessage());
         }
     }
@@ -75,14 +80,28 @@ class Koba_AI_Processor {
                 }
 
                 if ($full_json_data) {
+                    // 1. AUTO-CREATE THE SAFE FOLDER
+                    // If /wp-content/uploads/koba-vault/ doesn't exist on the user's site, create it.
                     if (!file_exists($this->vault_dir)) {
-                        mkdir($this->vault_dir, 0755, true);
+                        if (!mkdir($this->vault_dir, 0755, true)) {
+                            wp_send_json_error('Server Error: Cannot create upload folder. Check Permissions.');
+                            return;
+                        }
+                        // Silence file for security
                         file_put_contents($this->vault_dir . 'index.php', '<?php // Silence');
                     }
 
-                    // Save as .json
+                    // 2. Save File
                     $filename = 'transcript_' . $chapter['id'] . '.json';
-                    file_put_contents($this->vault_dir . $filename, json_encode($full_json_data));
+                    $save_path = $this->vault_dir . $filename;
+                    
+                    $bytes_written = file_put_contents($save_path, json_encode($full_json_data));
+
+                    // 3. Validate Save
+                    if ($bytes_written === false) {
+                        wp_send_json_error('Server Error: Write Permission Denied for ' . $filename);
+                        return;
+                    }
 
                     $chapters[$chapter_index]['ai_status'] = 'completed';
                     $chapters[$chapter_index]['transcript_file_url'] = $this->vault_url . $filename;
@@ -101,8 +120,7 @@ class Koba_AI_Processor {
                 wp_send_json_success(['status' => 'processing']);
             }
 
-        } catch (Throwable $e) { // CHANGED: Catch Fatal Errors too
-            // If it crashes, we send the error back to the UI instead of a 500 page
+        } catch (Throwable $e) { 
             wp_send_json_error('Polling Error: ' . $e->getMessage());
         }
     }
