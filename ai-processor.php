@@ -80,7 +80,7 @@ class Koba_AI_Processor {
                         file_put_contents($this->vault_dir . 'index.php', '<?php // Silence');
                     }
 
-                    // Save as .json (without .mp3 inside filename for cleaner URLs if desired, but keeping standard for now)
+                    // Save as .json
                     $filename = 'transcript_' . $chapter['id'] . '.json';
                     file_put_contents($this->vault_dir . $filename, json_encode($full_json_data));
 
