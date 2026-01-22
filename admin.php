@@ -1,7 +1,7 @@
 <?php
 /**
  * KOBA-I Audio: Production Studio
- * * Status: Stable / Final Label Polish
+ * * Status: Stable / Final Label Polish / Heartbeat Active
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -10,7 +10,7 @@ if (class_exists('Koba_Safety_Sentinel') && !Koba_Safety_Sentinel::scan()) retur
 function koba_render_production_suite() {
     $post_id = isset($_GET['post']) ? intval($_GET['post']) : 0;
 
-    // 1. DASHBOARD
+    // 1. DASHBOARD GRID
     if (!$post_id) {
         $books = get_posts(['post_type' => 'koba_publication', 'post_status' => 'any', 'numberposts' => -1]);
         ?>
@@ -20,7 +20,7 @@ function koba_render_production_suite() {
                     <img src="<?php echo KOBA_IA_URL . 'assets/koba-logo-text.png'; ?>" alt="KOBA-I">
                     <div class="brand-text">
                         <h1>Production Studio</h1>
-                        <span class="version-badge">v3.5 Sentinel Active</span>
+                        <span class="version-badge">v3.7 Live Sync</span>
                     </div>
                 </div>
                 <a href="<?php echo admin_url('post-new.php?post_type=koba_publication'); ?>" class="btn-orange">+ NEW PUBLICATION</a>
@@ -47,20 +47,20 @@ function koba_render_production_suite() {
         return;
     }
 
-    // 2. EDITOR
+    // 2. EDITOR INTERFACE
     wp_enqueue_media();
     
     $title    = get_the_title($post_id);
     $status   = get_post_status($post_id);
     $author   = get_post_meta($post_id, '_koba_author_name', true);
+    
+    // Force HTTPS to prevent mixed content
     $cover = get_post_meta($post_id, '_koba_cover_art_url', true);
-    if ($cover) {
-        $cover = set_url_scheme($cover, 'https'); 
-    }
+    if ($cover) $cover = set_url_scheme($cover, 'https');
+    
     $bg_image = get_post_meta($post_id, '_koba_bg_image_url', true);
-    if ($bg_image) {
-        $bg_image = set_url_scheme($bg_image, 'https');
-    }
+    if ($bg_image) $bg_image = set_url_scheme($bg_image, 'https');
+    
     $chapters = json_decode(get_post_meta($post_id, '_koba_chapters_data', true), true) ?: [];
 
     koba_render_studio_styles();
@@ -72,7 +72,7 @@ function koba_render_production_suite() {
                 <img src="<?php echo KOBA_IA_URL . 'assets/koba-logo-text.png'; ?>" alt="KOBA-I">
                 <div class="brand-text">
                     <h2>Production Studio</h2>
-                    <span class="version-badge">v3.5 Sentinel Active</span>
+                    <span class="version-badge">v3.7 Live Sync</span>
                 </div>
             </div>
             
@@ -120,29 +120,21 @@ function koba_render_production_suite() {
                 $ghost_id = $c['attachment_id'] ?? 0;
                 $has_file = !empty($c['transcript_file_url']);
                 
-                // COST MATH
-                $cost_display = "Est: $0.00";
-                if ($ghost_id) {
-                    $meta = wp_get_attachment_metadata($ghost_id);
-                    $raw = $meta['length'] ?? ($meta['length_formatted'] ?? 0);
-                    $sec = 0;
-                    if(is_numeric($raw)) $sec = intval($raw);
-                    elseif(is_string($raw) && strpos($raw, ':')!==false) {
-                        $p = explode(':', $raw);
-                        $sec = (count($p)===2) ? ($p[0]*60)+$p[1] : ($p[0]*3600)+($p[1]*60)+$p[2];
-                    }
-                    if($sec > 0) $cost_display = "Est: $" . number_format(ceil($sec/60)*0.02, 2);
-                }
-                
-                // --- STATUS UPDATES ---
-                // 1. Text Field Status
+                // Status Visuals
                 $json_status = $has_file ? "✓ TRANSCRIPT ACTIVE" : "Waiting for AI...";
                 $status_color = $has_file ? "#238636" : "#8b949e";
                 
-                // 2. Button Status
+                // Button State
                 $btn_text = 'GENERATE TRANSCRIPT';
-                if ($ai_status === 'processing') $btn_text = 'PROCESSING...';
-                if ($ai_status === 'completed')  $btn_text = '✓ COMPLETE';
+                $btn_class = 'btn-ai';
+                if ($ai_status === 'processing') {
+                    $btn_text = 'PROCESSING...';
+                    $btn_class .= ' processing';
+                }
+                if ($ai_status === 'completed') {
+                    $btn_text = '✓ COMPLETE';
+                    $btn_class .= ' completed';
+                }
             ?>
                 <div class="koba-chapter-row" data-index="<?php echo $index; ?>" data-id="<?php echo $c['id']; ?>">
                     <span class="drag-handle">⠿</span>
@@ -153,11 +145,9 @@ function koba_render_production_suite() {
                     <div style="flex:1;">
                         <input type="text" class="k-chap-title koba-input" value="<?php echo esc_attr($c['title']); ?>">
                         <div class="koba-row-controls">
-                            <input type="text" readonly class="koba-input-sm" value="<?php echo $json_status; ?>" style="color:<?php echo $status_color; ?>; border-color:<?php echo $status_color; ?>;">
+                            <input type="text" readonly class="koba-input-sm status-field" value="<?php echo $json_status; ?>" style="color:<?php echo $status_color; ?>; border-color:<?php echo $status_color; ?>;">
                             
-                            <span class="cost-badge"><?php echo $cost_display; ?></span>
-                            
-                            <button type="button" class="btn-ai <?php echo $ai_status; ?>" onclick="triggerAI(this, <?php echo $index; ?>)">
+                            <button type="button" class="<?php echo $btn_class; ?>" onclick="triggerAI(this, <?php echo $index; ?>)">
                                 <?php echo $btn_text; ?>
                             </button>
                         </div>
@@ -174,6 +164,36 @@ function koba_render_production_suite() {
     function copyShortcode(el) { navigator.clipboard.writeText(el.innerText); var t=el.innerText; el.innerText="COPIED!"; setTimeout(()=>el.innerText=t, 1000); }
 
     jQuery(document).ready(function($){
+        
+        // --- THE HEARTBEAT (Fixes "Stuck on Processing") ---
+        // Checks status of any processing chapter every 5 seconds
+        setInterval(function(){
+            $('.btn-ai.processing').each(function(){
+                var $btn = $(this);
+                var $row = $btn.closest('.koba-chapter-row');
+                var index = $row.data('index');
+
+                // Don't poll new unsaved rows
+                if(index === 'new') return;
+
+                $.post(ajaxurl, {
+                    action: 'koba_check_chapter',
+                    post_id: <?php echo $post_id; ?>,
+                    chapter_index: index,
+                    nonce: '<?php echo wp_create_nonce("k_studio_nonce"); ?>'
+                }, function(res) {
+                    if(res.success && res.data.status === 'completed') {
+                        // UPDATE UI TO SUCCESS
+                        $btn.removeClass('processing').addClass('completed').text('✓ COMPLETE');
+                        $row.find('.status-field').val('✓ TRANSCRIPT ACTIVE').css({color:'#238636', borderColor:'#238636'});
+                    } else if (!res.success) {
+                        console.log("Polling Error:", res.data);
+                    }
+                });
+            });
+        }, 5000); 
+        // ---------------------------------------------------
+
         var file_frame; 
         $(document).on('click', '.media-trigger', function(e){
             e.preventDefault();
@@ -201,11 +221,7 @@ function koba_render_production_suite() {
                 frame.state().get('selection').each(function(att){
                     var m = att.toJSON();
                     var type = m.type === 'video' ? 'video' : 'audio';
-                    var sec = m.length || 0; 
-                    if(!sec && m.fileLength && m.fileLength.includes(':')) {
-                        var p = m.fileLength.split(':'); sec = (+p[0])*60 + (+p[1]);
-                    }
-                    var cost = (sec>0) ? "Est: $" + (Math.ceil(sec/60)*0.02).toFixed(2) : "Est: Calc...";
+                    var cost = "Ready";
 
                     var row = `<div class="koba-chapter-row" data-id="${Date.now()}" data-index="new">
                         <span class="drag-handle">⠿</span>
@@ -216,8 +232,7 @@ function koba_render_production_suite() {
                         <div style="flex:1;">
                             <input type="text" class="k-chap-title koba-input" value="${m.title}">
                             <div class="koba-row-controls">
-                                <input type="text" readonly class="koba-input-sm" value="Waiting for Save..." style="color:#8b949e;">
-                                <span class="cost-badge">${cost}</span>
+                                <input type="text" readonly class="koba-input-sm status-field" value="Waiting for Save..." style="color:#8b949e;">
                                 <button type="button" class="btn-ai" disabled>SAVE TO ACTIVATE</button>
                             </div>
                         </div>
@@ -266,12 +281,8 @@ function koba_render_production_suite() {
         var $btn = jQuery(btn);
         if ($btn.hasClass('processing') || $btn.is(':disabled')) return;
         
-        // If completed, allow refresh but ask confirmation
         if ($btn.hasClass('completed')) {
-            if(!confirm("Re-generate Transcript?\nThis will charge the cost again.")) return;
-        } else {
-            var cost = $btn.siblings('.cost-badge').text();
-            if(!confirm("Start AI?\n"+cost)) return;
+            if(!confirm("Re-generate Transcript?")) return;
         }
 
         $btn.text('UPLOADING...').addClass('processing').removeClass('completed');
@@ -322,7 +333,6 @@ function koba_render_studio_styles() {
         .btn-ai.processing { border-color: #eab308; color: #eab308; pointer-events: none; }
         .btn-ai.completed { border-color: #238636; color: #238636; }
         .btn-remove { background:none; border:none; color:#ef4444; cursor:pointer; font-weight:bold; margin-top:15px; }
-        .cost-badge { font-size: 10px; color: #8b949e; font-family: monospace; white-space:nowrap; }
         .shortcode-box { background:#0f172a; padding:0 15px; border:1px dashed #30363d; border-radius:4px; font-family:monospace; color:#f97316; font-size:11px; cursor:pointer; height:40px; display:flex; align-items:center; }
     </style>';
 }
