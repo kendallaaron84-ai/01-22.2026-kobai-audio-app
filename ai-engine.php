@@ -2,7 +2,7 @@
 /**
  * KOBA-I Audio: AI Engine (Google Chirp v2)
  * * Targeted Retrieval Update: Fetches specific output URIs from Operation results.
- * * v3.8.1 Fix: Forces Protobuf Metadata loading to prevent Descriptor Pool errors.
+ * * v3.8.2 Fix: Hard-loads GPBMetadata to solve Descriptor Pool crash.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -81,15 +81,13 @@ class Koba_AI_Engine {
      */
     public function check_job_status($operation_name) {
         
-        // --- FIX: FORCE LOAD METADATA ---
-        // This pre-registers the class definitions so the "Any" type parser doesn't crash
-        if (class_exists('\Google\Cloud\Speech\V2\OperationMetadata')) {
-            // Just checking existence triggers the autoloader
+        // --- FIX v3.8.2: HARD LOAD METADATA ---
+        // We explicitly initialize the descriptor pool for Speech V2
+        // This prevents the "OperationMetadata hasn't been added to descriptor pool" error
+        if (class_exists('\GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech')) {
+            \GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech::initOnce();
         }
-        if (class_exists('\Google\Cloud\Speech\V2\BatchRecognizeResponse')) {
-            // Load the response definition too
-        }
-        // --------------------------------
+        // ---------------------------------------
         
         $speech = new SpeechClient([
             'credentials' => $this->key_file,
