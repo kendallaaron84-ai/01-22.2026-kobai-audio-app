@@ -2,6 +2,7 @@
 /**
  * KOBA-I Audio: AI Engine (Google Chirp v2)
  * * Targeted Retrieval Update: Fetches specific output URIs from Operation results.
+ * * v3.8.1 Fix: Forces Protobuf Metadata loading to prevent Descriptor Pool errors.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -79,10 +80,22 @@ class Koba_AI_Engine {
      * Returns: ['status' => 'completed', 'result_uri' => 'gs://...']
      */
     public function check_job_status($operation_name) {
+        
+        // --- FIX: FORCE LOAD METADATA ---
+        // This pre-registers the class definitions so the "Any" type parser doesn't crash
+        if (class_exists('\Google\Cloud\Speech\V2\OperationMetadata')) {
+            // Just checking existence triggers the autoloader
+        }
+        if (class_exists('\Google\Cloud\Speech\V2\BatchRecognizeResponse')) {
+            // Load the response definition too
+        }
+        // --------------------------------
+        
         $speech = new SpeechClient([
             'credentials' => $this->key_file,
             'apiEndpoint' => 'us-central1-speech.googleapis.com',
         ]);
+        
         $operation = $speech->resumeOperation($operation_name);
 
         if ($operation->isDone()) {
@@ -108,7 +121,6 @@ class Koba_AI_Engine {
      */
     public function fetch_transcript_json($target_uri) {
         // $target_uri is like: gs://bucket-name/transcripts/file.json
-        // We need to parse this or just use the object name if we know the bucket
         
         $matches = [];
         preg_match('/gs:\/\/([^\/]+)\/(.+)/', $target_uri, $matches);
