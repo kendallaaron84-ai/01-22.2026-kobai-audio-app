@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: KOBA-I Audio
- * Version: 3.6.0 - Ironclad & Mini
+ * Version: 3.6.1 - Transcript Auto-Linker
  * Description: Tier-1 Audiobook & Video Player with Mini-Mode and Studio Suite.
  * Author: Kendall Aaron
  * Text Domain: koba-i-audio
@@ -68,14 +68,33 @@ add_shortcode('koba_player', function($atts) {
 
     $chapters = json_decode($chapters_json, true) ?: [];
     
-    // Secure URLs (Ghost Protocol)
+    // --- PROCESS CHAPTERS ---
     foreach ($chapters as &$chapter) {
+        
+        // A. AUTO-LINKER: Generate Transcript URL from Audio URL
+        // We do this BEFORE we overwrite the URL with the secure stream link
+        $source_url = $chapter['url'] ?? '';
+        
+        // Only try to guess if no transcript is manually set
+        if (empty($chapter['transcript_file_url']) && !empty($source_url)) {
+            // Check if it's in the KOBA Vault and the audio-sources folder
+            if (strpos($source_url, 'koba-ai-processing-vault') !== false && strpos($source_url, '/audio-sources/') !== false) {
+                
+                // 1. Swap folder: 'audio-sources' -> 'transcripts'
+                $predicted_url = str_replace('/audio-sources/', '/transcripts/', $source_url);
+                
+                // 2. Append .json (Standard Google STT output is filename.mp3.json)
+                $chapter['transcript_file_url'] = $predicted_url . '.json';
+            }
+        }
+
+        // B. GHOST PROTOCOL: Secure the Audio URL
         $chapter['url'] = get_rest_url(null, "koba-ia/v2/stream/{$chapter['id']}");
     }
 
     // Enqueue Assets (Ironclad JS)
-    wp_enqueue_script('koba-bloom-js', KOBA_IA_URL . 'assets/bloom-player.js', [], '3.6.0', true);
-    wp_enqueue_style('koba-bloom-css', KOBA_IA_URL . 'assets/bloom-style.css', [], '3.6.0');
+    wp_enqueue_script('koba-bloom-js', KOBA_IA_URL . 'assets/bloom-player.js', [], '3.6.1', true);
+    wp_enqueue_style('koba-bloom-css', KOBA_IA_URL . 'assets/bloom-style.css', [], '3.6.1');
 
     // Pass Data to Window (Global Scope)
     wp_localize_script('koba-bloom-js', 'kobaData', [
@@ -92,7 +111,6 @@ add_shortcode('koba_player', function($atts) {
 
 // 6. AUTO-INJECT PLAYER (For Preview Button)
 add_filter('the_content', function($content) {
-    // Automatically adds the player to the top of the Publication page
     if (is_singular('koba_publication') && in_the_loop() && is_main_query()) {
         return do_shortcode('[koba_player]') . $content;
     }
@@ -114,16 +132,26 @@ add_shortcode('koba_mini', function($atts) {
 
     $chapters = json_decode($chapters_json, true) ?: [];
     
-    // 3. Process URLs
+    // 3. Process URLs (Same Logic as Main Player)
     foreach ($chapters as &$chapter) {
+        // A. Auto-Link Transcript
+        $source_url = $chapter['url'] ?? '';
+        if (empty($chapter['transcript_file_url']) && !empty($source_url)) {
+            if (strpos($source_url, 'koba-ai-processing-vault') !== false && strpos($source_url, '/audio-sources/') !== false) {
+                $predicted_url = str_replace('/audio-sources/', '/transcripts/', $source_url);
+                $chapter['transcript_file_url'] = $predicted_url . '.json';
+            }
+        }
+
+        // B. Secure Stream
         $chapter['url'] = get_rest_url(null, "koba-ia/v2/stream/{$chapter['id']}");
     }
 
-    // 4. Enqueue Assets (Same script handles both modes)
-    wp_enqueue_script('koba-bloom-js', KOBA_IA_URL . 'assets/bloom-player.js', [], '3.6.0', true);
-    wp_enqueue_style('koba-bloom-css', KOBA_IA_URL . 'assets/bloom-style.css', [], '3.6.0');
+    // 4. Enqueue Assets
+    wp_enqueue_script('koba-bloom-js', KOBA_IA_URL . 'assets/bloom-player.js', [], '3.6.1', true);
+    wp_enqueue_style('koba-bloom-css', KOBA_IA_URL . 'assets/bloom-style.css', [], '3.6.1');
 
-    // 5. Prepare Payload (Mini Config)
+    // 5. Prepare Payload
     $payload = [
         'mode'        => 'mini',
         'title'       => get_the_title($post_id),
@@ -132,7 +160,7 @@ add_shortcode('koba_mini', function($atts) {
         'chapters'    => $chapters
     ];
 
-    // 6. Render Container (Data attribute holds the config)
+    // 6. Render Container
     $json_attr = htmlspecialchars(json_encode($payload), ENT_QUOTES, 'UTF-8');
     return "<div class='koba-mini-root' data-config='$json_attr'></div>";
 });
