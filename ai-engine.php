@@ -1,7 +1,7 @@
 <?php
 /**
  * KOBA-I Audio: AI Engine (Google Chirp v2)
- * * v3.9.1 Fix: Manually unpacks 'Any' objects to bypass Descriptor Pool issues.
+ * * v4.0.0 Stable: Implements safe Pre-loading and Response Unwrapping.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -15,8 +15,9 @@ use Google\Cloud\Speech\V2\RecognitionOutputConfig;
 use Google\Cloud\Speech\V2\GcsOutputConfig;
 use Google\Cloud\Storage\StorageClient;
 
-// Import the Response class so we can unpack into it
+// Import the specific classes we need to handle manually
 use Google\Cloud\Speech\V2\BatchRecognizeResponse;
+use Google\Cloud\Speech\V2\OperationMetadata;
 
 class Koba_AI_Engine {
     private $key_file;
@@ -31,56 +32,42 @@ class Koba_AI_Engine {
         }
     }
 
+    // ... (Your upload_to_vault and start_chirp_job functions remain unchanged) ...
     public function upload_to_vault($attachment_id) {
         $file_path = get_attached_file($attachment_id);
         if (!$file_path) throw new Exception("Local file not found.");
-
         $storage = new StorageClient(['keyFilePath' => $this->key_file]);
         $bucket = $storage->bucket($this->bucket_name);
         $object_name = 'audio-sources/' . basename($file_path);
-        
         $bucket->upload(fopen($file_path, 'r'), ['name' => $object_name]);
         return "gs://{$this->bucket_name}/{$object_name}";
     }
 
     public function start_chirp_job($gcs_uri) {
-        $speech = new SpeechClient([
-            'credentials' => $this->key_file,
-            'apiEndpoint' => 'us-central1-speech.googleapis.com',
-        ]);
-
+        $speech = new SpeechClient(['credentials' => $this->key_file, 'apiEndpoint' => 'us-central1-speech.googleapis.com']);
         $parent = "projects/{$this->project_id}/locations/us-central1";
-        $recognizer = "{$parent}/recognizers/_";
-
-        $features = (new RecognitionFeatures())
-            ->setEnableAutomaticPunctuation(true)
-            ->setEnableWordTimeOffsets(true); 
-
-        $config = (new RecognitionConfig())
-            ->setModel('chirp')
-            ->setLanguageCodes(['en-US'])
-            ->setFeatures($features)
-            ->setAutoDecodingConfig(new AutoDetectDecodingConfig());
-
+        $features = (new RecognitionFeatures())->setEnableAutomaticPunctuation(true)->setEnableWordTimeOffsets(true); 
+        $config = (new RecognitionConfig())->setModel('chirp')->setLanguageCodes(['en-US'])->setFeatures($features)->setAutoDecodingConfig(new AutoDetectDecodingConfig());
         $output_uri = "gs://{$this->bucket_name}/transcripts/";
-        $output_config = (new RecognitionOutputConfig())
-            ->setGcsOutputConfig((new GcsOutputConfig())->setUri($output_uri));
-
+        $output_config = (new RecognitionOutputConfig())->setGcsOutputConfig((new GcsOutputConfig())->setUri($output_uri));
         $files = [ (new BatchRecognizeFileMetadata())->setUri($gcs_uri) ];
-        
-        $request = (new BatchRecognizeRequest())
-            ->setRecognizer($recognizer)
-            ->setConfig($config)
-            ->setFiles($files)
-            ->setRecognitionOutputConfig($output_config);
-
+        $request = (new BatchRecognizeRequest())->setRecognizer("{$parent}/recognizers/_")->setConfig($config)->setFiles($files)->setRecognitionOutputConfig($output_config);
         return $speech->batchRecognize($request)->getName();
     }
+    // ... (End of unchanged functions) ...
 
     /**
      * CHECK STATUS & GET RESULT URI
      */
     public function check_job_status($operation_name) {
+        
+        // --- 1. SAFE PRE-LOAD (The "Instruction Manual") ---
+        // Instead of brute force, we look for the specific Metadata class provided by Google 
+        // and run its standard initialization method.
+        if (class_exists('\GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech')) {
+            \GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech::initOnce();
+        }
+        // ---------------------------------------------------
         
         $speech = new SpeechClient([
             'credentials' => $this->key_file,
@@ -92,23 +79,25 @@ class Koba_AI_Engine {
         if ($operation->isDone()) {
             $result = $operation->getResult(); 
 
-            // --- FIX v3.9.1: MANUAL UNPACK ---
-            // If Google returns a sealed "Any" object because it couldn't auto-detect the type,
-            // we manually unpack it into a BatchRecognizeResponse object.
+            // --- 2. THE UNWRAPPER (The "Sealed Box") ---
+            // If the result is wrapped in an "Any" object, we gently unpack it.
             if ($result instanceof \Google\Protobuf\Any) {
                 $realResponse = new BatchRecognizeResponse();
                 $result->unpackTo($realResponse);
                 $result = $realResponse;
             }
-            // ---------------------------------
+            // -------------------------------------------
             
-            // Now $result is guaranteed to be the correct object type
-            $results = $result->getResults(); 
-            
-            foreach ($results as $res) {
-                $uri = $res->getCloudStorageResult()->getUri();
-                return ['status' => 'completed', 'result_uri' => $uri];
+            // Now we can safely read the results
+            // Note: We check if getResults exists to be extra safe
+            if (method_exists($result, 'getResults')) {
+                $results = $result->getResults(); 
+                foreach ($results as $res) {
+                    $uri = $res->getCloudStorageResult()->getUri();
+                    return ['status' => 'completed', 'result_uri' => $uri];
+                }
             }
+            
             return ['status' => 'completed', 'result_uri' => null];
         }
         
@@ -118,16 +107,10 @@ class Koba_AI_Engine {
     public function fetch_transcript_json($target_uri) {
         $matches = [];
         preg_match('/gs:\/\/([^\/]+)\/(.+)/', $target_uri, $matches);
-        
         if (count($matches) < 3) return null;
-        
-        $bucket_name = $matches[1];
-        $object_name = $matches[2];
-
         $storage = new StorageClient(['keyFilePath' => $this->key_file]);
-        $bucket = $storage->bucket($bucket_name);
-        $object = $bucket->object($object_name);
-
+        $bucket = $storage->bucket($matches[1]);
+        $object = $bucket->object($matches[2]);
         if ($object->exists()) {
             return json_decode($object->downloadAsString(), true);
         }
