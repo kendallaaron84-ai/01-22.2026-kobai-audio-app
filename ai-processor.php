@@ -1,7 +1,7 @@
 <?php
 /**
  * KOBA-I Audio: AI Processor (AJAX Logic)
- * * Updated to use Targeted URI Retrieval
+ * * v3.9.0 Fix: Catches Fatal Errors (Throwable) to prevent 500 crashes.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -43,8 +43,8 @@ class Koba_AI_Processor {
             update_post_meta($post_id, '_koba_chapters_data', json_encode($chapters));
             wp_send_json_success(['status' => 'processing']);
 
-        } catch (Exception $e) {
-            wp_send_json_error($e->getMessage());
+        } catch (Throwable $e) { // CHANGED: Catch Fatal Errors too
+            wp_send_json_error('Error: ' . $e->getMessage());
         }
     }
 
@@ -67,7 +67,6 @@ class Koba_AI_Processor {
 
             if ($status_data['status'] === 'completed') {
                 
-                // USE THE EXACT URI RETURNED BY GOOGLE
                 $result_uri = $status_data['result_uri'];
                 $full_json_data = null;
 
@@ -81,6 +80,7 @@ class Koba_AI_Processor {
                         file_put_contents($this->vault_dir . 'index.php', '<?php // Silence');
                     }
 
+                    // Save as .json (without .mp3 inside filename for cleaner URLs if desired, but keeping standard for now)
                     $filename = 'transcript_' . $chapter['id'] . '.json';
                     file_put_contents($this->vault_dir . $filename, json_encode($full_json_data));
 
@@ -95,15 +95,15 @@ class Koba_AI_Processor {
                         'message' => 'Transcript Saved: ' . $filename
                     ]);
                 } else {
-                    // Job says done, but URI or file is missing?
                     wp_send_json_error('Job complete, but result file missing.');
                 }
             } else {
                 wp_send_json_success(['status' => 'processing']);
             }
 
-        } catch (Exception $e) {
-            wp_send_json_error($e->getMessage());
+        } catch (Throwable $e) { // CHANGED: Catch Fatal Errors too
+            // If it crashes, we send the error back to the UI instead of a 500 page
+            wp_send_json_error('Polling Error: ' . $e->getMessage());
         }
     }
 }
