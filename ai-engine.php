@@ -1,7 +1,8 @@
 <?php
 /**
  * KOBA-I Audio: AI Engine (Google Chirp v2)
- * * v3.9.0 Fix: "Safe Mode" Metadata Loading to prevent 500 Errors.
+ * * Targeted Retrieval Update: Fetches specific output URIs from Operation results.
+ * * v3.8.2 Fix: Hard-loads GPBMetadata to solve Descriptor Pool crash.
  */
 if (!defined('ABSPATH')) exit;
 
@@ -14,10 +15,6 @@ use Google\Cloud\Speech\V2\AutoDetectDecodingConfig;
 use Google\Cloud\Speech\V2\RecognitionOutputConfig;
 use Google\Cloud\Speech\V2\GcsOutputConfig;
 use Google\Cloud\Storage\StorageClient;
-
-// Import these so we can instantiate dummies if needed
-use Google\Cloud\Speech\V2\OperationMetadata;
-use Google\Cloud\Speech\V2\BatchRecognizeResponse;
 
 class Koba_AI_Engine {
     private $key_file;
@@ -80,25 +77,17 @@ class Koba_AI_Engine {
 
     /**
      * CHECK STATUS & GET RESULT URI
+     * Returns: ['status' => 'completed', 'result_uri' => 'gs://...']
      */
     public function check_job_status($operation_name) {
         
-        // --- SAFE DESCRIPTOR LOADING ---
-        // 1. Try the standard Metadata class Init
+        // --- FIX v3.8.2: HARD LOAD METADATA ---
+        // We explicitly initialize the descriptor pool for Speech V2
+        // This prevents the "OperationMetadata hasn't been added to descriptor pool" error
         if (class_exists('\GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech')) {
             \GPBMetadata\Google\Cloud\Speech\V2\CloudSpeech::initOnce();
-        } 
-        
-        // 2. Fallback: Instantiate dummy objects to force-register the descriptors
-        // This solves the "OperationMetadata hasn't been added to descriptor pool" error
-        // without knowing the exact Metadata class path.
-        if (class_exists('\Google\Cloud\Speech\V2\OperationMetadata')) {
-            new \Google\Cloud\Speech\V2\OperationMetadata();
         }
-        if (class_exists('\Google\Cloud\Speech\V2\BatchRecognizeResponse')) {
-            new \Google\Cloud\Speech\V2\BatchRecognizeResponse();
-        }
-        // -------------------------------
+        // ---------------------------------------
         
         $speech = new SpeechClient([
             'credentials' => $this->key_file,
@@ -108,20 +97,29 @@ class Koba_AI_Engine {
         $operation = $speech->resumeOperation($operation_name);
 
         if ($operation->isDone()) {
-            $result = $operation->getResult(); 
-            $results = $result->getResults(); 
+            $result = $operation->getResult(); // BatchRecognizeResponse
+            $results = $result->getResults(); // Map<string, BatchRecognizeFileResult>
             
+            // We only sent one file, so we grab the first result
             foreach ($results as $res) {
+                // The API returns the specific Cloud Storage URI where the JSON was saved
                 $uri = $res->getCloudStorageResult()->getUri();
                 return ['status' => 'completed', 'result_uri' => $uri];
             }
+            
+            // Fallback if results are empty (rare)
             return ['status' => 'completed', 'result_uri' => null];
         }
         
         return ['status' => 'processing'];
     }
 
+    /**
+     * FETCH JSON DIRECTLY FROM URI
+     */
     public function fetch_transcript_json($target_uri) {
+        // $target_uri is like: gs://bucket-name/transcripts/file.json
+        
         $matches = [];
         preg_match('/gs:\/\/([^\/]+)\/(.+)/', $target_uri, $matches);
         
