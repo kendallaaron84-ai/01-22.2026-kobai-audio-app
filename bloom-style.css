@@ -1,0 +1,275 @@
+:root {
+    --k-accent: #f97316;   /* KOBA Orange */
+    --k-text: #ffffff;     /* Pure White */
+    --k-dim: rgba(255, 255, 255, 0.5); 
+    --k-glass: rgba(255, 255, 255, 0.08); 
+    --k-border: rgba(255, 255, 255, 0.1);
+}
+
+/* =========================================
+   1. MAIN PLAYER CONTAINER (Phantom Glass)
+   ========================================= */
+#koba-bloom-root {
+    width: 100%; 
+    max-width: 1100px; 
+    margin: 0 auto;
+    background: #09090b; 
+    border-radius: 12px; 
+    overflow: hidden;
+    position: relative; 
+    aspect-ratio: 16/9; /* Widescreen for Desktop */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+    color: white;
+    border: 1px solid #27272a;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+}
+
+/* Background Blurs */
+.k-bloom-bg {
+    position: absolute; top: -10%; left: -10%; 
+    width: 120%; height: 120%;
+    background-size: cover; background-position: center;
+    filter: blur(50px) brightness(0.35) saturate(1.2); 
+    z-index: 1;
+}
+
+/* Logo */
+.k-bloom-logo { 
+    position: absolute; top: 24px; left: 24px; 
+    height: 26px; z-index: 50; opacity: 0.9;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+/* =========================================
+   2. INTERFACE LAYOUT (Grid)
+   ========================================= */
+.k-bloom-interface {
+    position: absolute; inset: 0; z-index: 10;
+    display: grid; 
+    grid-template-columns: 1fr 340px; /* Stage Left, Playlist Right */
+}
+
+/* Stage Area */
+.k-bloom-stage { 
+    display: flex; flex-direction: column; 
+    justify-content: center; align-items: center; 
+    padding: 30px; position: relative;
+    min-width: 0;
+}
+
+.k-bloom-cover { 
+    width: 260px; height: 260px; 
+    background-size: cover; background-position: center;
+    border-radius: 8px; 
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); 
+    margin-bottom: 35px; 
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* =========================================
+   3. CONTROLS (Phantom Buttons)
+   ========================================= */
+.k-bloom-controls { 
+    width: 100%; max-width: 550px; 
+    display: flex; flex-direction: column; gap: 18px;
+}
+
+.k-scrubber { 
+    width: 100%; height: 6px; 
+    background: rgba(255,255,255,0.15); 
+    border-radius: 3px; cursor: pointer; position: relative; 
+}
+
+.k-progress { 
+    height: 100%; background: var(--k-accent); width: 0%; 
+    border-radius: 3px; position: relative;
+    box-shadow: 0 0 15px rgba(249, 115, 22, 0.4);
+}
+
+.k-time-row { 
+    display: flex; justify-content: space-between; 
+    font-size: 11px; color: var(--k-dim); 
+    font-weight: 500; margin-top: -12px;
+}
+
+.k-buttons { 
+    display: flex; justify-content: space-between; align-items: center; 
+    padding: 0 8px; 
+}
+
+/* Icon Buttons */
+.k-btn-icon { 
+    background: transparent; border: none; 
+    color: var(--k-dim); cursor: pointer; 
+    font-size: 20px; padding: 10px; 
+    border-radius: 8px; transition: all 0.2s;
+}
+.k-btn-icon:hover { color: white; background: var(--k-glass); }
+
+/* Play Button */
+.k-btn-main { 
+    width: 60px; height: 60px; 
+    border-radius: 50%; 
+    background: rgba(255, 255, 255, 0.1); 
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2); 
+    color: white; font-size: 22px; 
+    cursor: pointer; 
+    display: flex; align-items: center; justify-content: center; 
+    margin: 0 12px; padding-left: 4px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    transition: all 0.2s;
+}
+.k-btn-main:hover { transform: scale(1.05); background: white; color: black; }
+
+.k-actions { 
+    display: flex; gap: 5px; 
+    border-left: 1px solid var(--k-border);
+    padding-left: 12px; margin-left: 8px;
+}
+
+/* =========================================
+   4. SIDEBAR (Playlist)
+   ========================================= */
+.k-bloom-sidebar { 
+    background: rgba(10, 10, 10, 0.6); 
+    backdrop-filter: blur(20px);
+    border-left: 1px solid var(--k-border); 
+    display: flex; flex-direction: column; 
+}
+.k-tabs { display: flex; border-bottom: 1px solid var(--k-border); }
+.k-tab { 
+    flex: 1; background: none; border: none; padding: 18px; 
+    color: var(--k-dim); cursor: pointer; 
+    text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 1px; 
+}
+.k-tab.active { color: var(--k-accent); border-bottom: 2px solid var(--k-accent); background: rgba(249, 115, 22, 0.05); }
+.k-list { flex: 1; overflow-y: auto; padding: 0; }
+.k-list-item { 
+    padding: 14px 18px; display: flex; align-items: center; 
+    cursor: pointer; border-bottom: 1px solid var(--k-border); 
+    font-size: 13px; color: rgba(255,255,255,0.8);
+}
+.k-list-item.active { background: rgba(249, 115, 22, 0.1); border-left: 3px solid var(--k-accent); color: white; }
+.k-item-info { margin-left: 12px; }
+
+/* =========================================
+   5. MINI PLAYER STYLES (For Standard Use)
+   ========================================= */
+.koba-mini-container {
+    width: 100%; min-height: 90px; 
+    background: #09090b; border-radius: 12px; 
+    padding: 15px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); 
+    border: 1px solid #27272a; box-sizing: border-box; 
+    font-family: -apple-system, sans-serif;
+    display: flex; align-items: center;
+}
+.k-mini-shell { display: flex; align-items: center; gap: 20px; width: 100%; }
+.k-mini-cover { width: 60px; height: 60px; border-radius: 8px; background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid var(--k-border); }
+.k-mini-play-btn { width: 50px; height: 50px; border-radius: 50%; background: white; color: black; border:none; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding-left: 3px; transition: transform 0.2s; }
+.k-mini-info { flex: 1; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.k-mini-title { color: white; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 10px; }
+.k-mini-scrubber { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative; }
+.k-mini-progress { height: 100%; background: var(--k-accent); width: 0%; border-radius: 3px; }
+
+/* =========================================
+   6. MOBILE / TABLET LAYOUT (The Audiobook Fix)
+   ========================================= */
+/* This restores the "App" look on phones/tablets */
+@media (max-width: 900px) {
+    .k-bloom-interface { 
+        grid-template-columns: 1fr; 
+        grid-template-rows: 1fr 1fr; /* Split 50/50: Stage / List */
+    }
+    #koba-bloom-root { 
+        aspect-ratio: auto;
+        height: 85vh; /* Takes up most of the screen like an App */
+        max-height: 800px;
+        border-radius: 0; 
+        margin: 20px auto;
+    }
+    .k-bloom-cover { width: 180px; height: 180px; margin-bottom: 25px; }
+    .k-bloom-sidebar { border-left: none; border-top: 1px solid var(--k-border); }
+}
+
+/* =========================================
+   7. PAGE CLEANUP (Hides "Recent Posts" Sidebar)
+   ========================================= */
+/* Only applies to Single Koba Publications */
+body.single-koba_publication #sidebar,        
+body.single-koba_publication #secondary,
+body.single-koba_publication .et_pb_widget_area_right {          
+    display: none !important;
+}
+
+body.single-koba_publication #main-content,
+body.single-koba_publication #left-area {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    float: none !important;
+}
+
+body.single-koba_publication .entry-content,
+body.single-koba_publication .et_pb_post {
+    width: 100% !important; 
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+/* =========================================
+   8. READING MODE (The Teleprompter)
+   ========================================= */
+
+/* Default State: Text is hidden */
+.k-read-scrollbox {
+    display: none;
+    width: 100%;
+    max-width: 600px;
+    height: 300px; /* Matches cover area */
+    overflow-y: auto;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--k-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-sizing: border-box;
+    text-align: center; /* Center the lyrics/text */
+}
+
+/* When Reading Mode is ACTIVE on the Root */
+#koba-bloom-root.k-mode-reading .k-bloom-cover,
+#koba-bloom-root.k-mode-reading .k-video-element {
+    display: none !important; /* Hide Art/Video */
+}
+
+#koba-bloom-root.k-mode-reading .k-read-scrollbox {
+    display: block !important; /* Show Text */
+}
+
+/* Active Word Highlight */
+.k-word {
+    opacity: 0.6;
+    transition: all 0.2s;
+    cursor: pointer;
+    display: inline-block;
+    margin: 0 2px;
+    line-height: 1.6;
+    font-size: 16px;
+}
+.k-word:hover { opacity: 1; color: white; }
+.k-word.active {
+    opacity: 1;
+    color: var(--k-accent);
+    font-weight: 700;
+    transform: scale(1.1);
+    text-shadow: 0 0 10px rgba(249, 115, 22, 0.4);
+}
+
+/* Mobile Adjustment for Text */
+@media (max-width: 900px) {
+    .k-read-scrollbox {
+        height: 50vh; /* Taller on phone */
+    }
+}
