@@ -1,6 +1,6 @@
 /**
  * KOBA-I UNIVERSAL PLAYER
- * Version 5.0 - Teleprompter Mode
+ * Version 6.0 - Mobile Lock Screen & Media Session API
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         }
 
-        // REFERENCES & LOGIC
+        // REFERENCES
         const playBtn = root.querySelector(mode === 'mini' ? '.k-mini-play-btn' : '#k-play-btn');
         const progressBar = root.querySelector(mode === 'mini' ? '.k-mini-progress' : '#k-progress');
         const scrubber = root.querySelector(mode === 'mini' ? '.k-mini-scrubber' : '#k-scrubber');
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const currTimeEl = root.querySelector('#k-curr-time');
         const durTimeEl = root.querySelector('#k-dur-time');
         
-        // New Teleprompter References
+        // Teleprompter References
         const textBtn = root.querySelector('#k-text-btn');
         const readBox = root.querySelector('#k-read-scrollbox');
         
@@ -116,19 +116,25 @@ document.addEventListener('DOMContentLoaded', function() {
             currentIndex = index;
             const chap = chapters[index];
 
-            // Reset View (Show Cover, Hide Text)
+            // Reset View
             if(mode === 'full') {
                 root.classList.remove('k-mode-reading'); 
                 if(readBox) readBox.innerHTML = '<div style="opacity:0.5; padding-top:120px;">Loading Transcript...</div>';
             }
 
             if(mediaBox) mediaBox.innerHTML = '';
-            if (mediaEl) { mediaEl.pause(); mediaEl.src = ""; mediaEl = null; }
+            if (mediaEl) { 
+                mediaEl.pause(); 
+                mediaEl.removeAttribute('src'); // Clean cleanup
+                mediaEl = null; 
+            }
 
             if (mode === 'full') {
                 if (chap.type === 'video') {
                     mediaEl = document.createElement('video');
                     mediaEl.className = 'k-video-element';
+                    // Video needs to play inline on mobile
+                    mediaEl.setAttribute('playsinline', 'true');
                 } else {
                     const cover = document.createElement('div');
                     cover.className = 'k-bloom-cover';
@@ -142,6 +148,30 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             mediaEl.src = chap.url;
+            mediaEl.preload = 'metadata'; // Load metadata early for lock screen
+
+            // --- LOCK SCREEN / MEDIA SESSION API ---
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: chap.title,
+                    artist: data.title, // Use Book Title as "Artist"
+                    album: "KOBA-I Audio",
+                    artwork: [
+                        { src: data.coverUrl, sizes: '512x512', type: 'image/jpeg' }
+                    ]
+                });
+
+                // Link Phone Controls to Player Functions
+                navigator.mediaSession.setActionHandler('play', () => { togglePlay(); });
+                navigator.mediaSession.setActionHandler('pause', () => { togglePlay(); });
+                navigator.mediaSession.setActionHandler('previoustrack', () => { loadChapter(currentIndex - 1); setTimeout(togglePlay, 500); });
+                navigator.mediaSession.setActionHandler('nexttrack', () => { loadChapter(currentIndex + 1); setTimeout(togglePlay, 500); });
+                navigator.mediaSession.setActionHandler('seekto', (details) => {
+                    if (mediaEl && details.seekTime) mediaEl.currentTime = details.seekTime;
+                });
+            }
+            // ---------------------------------------
+
             mediaEl.addEventListener('timeupdate', updateProgress);
             mediaEl.addEventListener('ended', () => { if(mode === 'full') loadChapter(currentIndex + 1); });
             mediaEl.addEventListener('loadedmetadata', () => { if(durTimeEl) durTimeEl.innerText = formatTime(mediaEl.duration); });
@@ -154,8 +184,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
         function togglePlay() {
             if (!mediaEl) return;
-            if (mediaEl.paused) { mediaEl.play(); playBtn.innerText = '❚❚'; isPlaying = true; } 
-            else { mediaEl.pause(); playBtn.innerText = '▶'; isPlaying = false; }
+            if (mediaEl.paused) { 
+                mediaEl.play()
+                    .then(() => {
+                        playBtn.innerText = '❚❚'; 
+                        isPlaying = true;
+                        if('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
+                    })
+                    .catch(e => console.log("Play interrupted:", e));
+            } else { 
+                mediaEl.pause(); 
+                playBtn.innerText = '▶'; 
+                isPlaying = false;
+                if('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+            }
         }
 
         function updateProgress() {
@@ -164,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if(progressBar) progressBar.style.width = `${pct}%`;
             if(currTimeEl) currTimeEl.innerText = formatTime(mediaEl.currentTime);
             
-            // Sync Text in Teleprompter
+            // Sync Text
             if (transcriptData && root.classList.contains('k-mode-reading')) syncText(mediaEl.currentTime);
         }
 
@@ -193,7 +235,8 @@ document.addEventListener('DOMContentLoaded', function() {
             textBtn.style.opacity = '0.3';
             textBtn.style.cursor = 'default';
             
-            if (chap.transcript_file_url) {
+            // Safe URL check for transcript
+            if (chap.transcript_file_url && chap.transcript_file_url.includes('.json')) {
                 fetch(chap.transcript_file_url)
                     .then(r => r.json())
                     .then(json => {
@@ -208,21 +251,24 @@ document.addEventListener('DOMContentLoaded', function() {
                         if(transcriptData.length > 0) {
                             textBtn.style.opacity = '1';
                             textBtn.style.cursor = 'pointer';
-                            
-                            // Build HTML for scrollbox
                             if(readBox) {
                                 readBox.innerHTML = '';
                                 transcriptData.forEach(t => {
                                     const span = document.createElement('span');
                                     span.className = 'k-word'; span.innerText = t.word + ' ';
                                     span.dataset.start = t.start; span.dataset.end = t.end;
-                                    // Clicking a word jumps to that time
                                     span.onclick = () => { if(mediaEl) { mediaEl.currentTime = t.start; mediaEl.play(); isPlaying = true; playBtn.innerText = '❚❚'; }};
                                     readBox.appendChild(span);
                                 });
                             }
                         }
+                    })
+                    .catch(err => {
+                        console.log('Transcript load failed', err);
+                        if(readBox) readBox.innerHTML = '<div style="opacity:0.5; padding-top:120px;">Transcript Not Available</div>';
                     });
+            } else {
+                 if(readBox) readBox.innerHTML = '<div style="opacity:0.5; padding-top:120px;">Transcript Not Available</div>';
             }
         }
 
@@ -230,7 +276,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if(!readBox) return;
             const words = readBox.querySelectorAll('.k-word');
             let activeWord = null;
-            
             words.forEach(w => {
                 const start = parseFloat(w.dataset.start);
                 const end = parseFloat(w.dataset.end);
@@ -241,8 +286,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     w.classList.remove('active');
                 }
             });
-
-            // Auto-Scroll Logic
             if(activeWord) {
                 activeWord.scrollIntoView({behavior: "smooth", block: "center", inline: "nearest"});
             }
@@ -255,56 +298,4 @@ document.addEventListener('DOMContentLoaded', function() {
             mediaEl.currentTime = ((e.clientX - rect.left) / rect.width) * mediaEl.duration;
         };
 
-        if (mode === 'full') {
-            const nextBtn = root.querySelector('#k-next-btn');
-            const prevBtn = root.querySelector('#k-prev-btn');
-            const ffBtn = root.querySelector('#k-ff-btn');
-            const rwBtn = root.querySelector('#k-rw-btn');
-            const speedBtn = root.querySelector('#k-speed-btn');
-            const markBtn = root.querySelector('#k-mark-btn');
-            const tabChapters = root.querySelector('#tab-chapters');
-            const tabBookmarks = root.querySelector('#tab-bookmarks');
-            
-            if(nextBtn) nextBtn.onclick = () => { loadChapter(currentIndex + 1); setTimeout(togglePlay, 500); };
-            if(prevBtn) prevBtn.onclick = () => { loadChapter(currentIndex - 1); setTimeout(togglePlay, 500); };
-            if(ffBtn) ffBtn.onclick = () => { if(mediaEl) mediaEl.currentTime += 30; };
-            if(rwBtn) rwBtn.onclick = () => { if(mediaEl) mediaEl.currentTime -= 30; };
-            if(speedBtn) speedBtn.onclick = () => { 
-                if(!mediaEl) return;
-                let r = mediaEl.playbackRate;
-                r = (r === 1) ? 1.5 : (r === 1.5 ? 2 : 1);
-                mediaEl.playbackRate = r;
-                speedBtn.innerText = r + 'x';
-            };
-            
-            // --- NEW: Toggle Reading Mode ---
-            if(textBtn) textBtn.onclick = () => { 
-                if(transcriptData) {
-                    root.classList.toggle('k-mode-reading');
-                    // If we just turned it on, sync immediately
-                    if(root.classList.contains('k-mode-reading') && mediaEl) syncText(mediaEl.currentTime);
-                }
-            };
-            // ---------------------------------
-
-            if(markBtn) markBtn.onclick = () => {
-                if(!mediaEl) return;
-                bookmarks.push({ index: currentIndex, time: mediaEl.currentTime, name: `${chapters[currentIndex].title} @ ${formatTime(mediaEl.currentTime)}` });
-                alert("Bookmark Added!");
-            };
-            if(tabBookmarks) tabBookmarks.onclick = () => {
-                tabChapters.classList.remove('active'); tabBookmarks.classList.add('active');
-                listContainer.innerHTML = '';
-                if(bookmarks.length === 0) listContainer.innerHTML = '<div style="padding:20px; color:#fff; text-align:center; font-size:12px; opacity:0.5;">No bookmarks yet</div>';
-                else bookmarks.forEach(b => {
-                    const row = document.createElement('div'); row.className = 'k-list-item';
-                    row.innerHTML = `<span>🔖</span><span class="k-item-title" style="margin-left:10px">${b.name}</span>`;
-                    row.onclick = () => { loadChapter(b.index); setTimeout(() => { mediaEl.currentTime = b.time; togglePlay(); }, 500); };
-                    listContainer.appendChild(row);
-                });
-            };
-            if(tabChapters) tabChapters.onclick = () => { tabBookmarks.classList.remove('active'); tabChapters.classList.add('active'); renderList(); };
-        }
-        loadChapter(0);
-    }
-});
+        if (mode === '
