@@ -298,4 +298,6 @@ document.addEventListener('DOMContentLoaded', function() {
             mediaEl.currentTime = ((e.clientX - rect.left) / rect.width) * mediaEl.duration;
         };
 
-        if (mode === '
+        loadChapter(0);
+    }
+});
